@@ -1,0 +1,111 @@
+import time
+import board
+import digitalio as dio
+from circuitpython_nrf24l01 import RF24
+
+# addresses needs to be in a buffer protocol object (bytearray)
+addressRx = b'1Node'
+addressTx = b'1Node'
+# change these (digital output) pins accordingly
+ce = dio.DigitalInOut(board.D5)
+csn = dio.DigitalInOut(board.D6)
+
+# using board.SPI() automatically selects the MCU's
+# available SPI pins, board.SCK, board.MOSI, board.MISO
+spi = board.SPI()  # init spi bus object
+
+# we'll be using the dynamic payload size feature (enabled by default)
+# initialize the nRF24L01 on the spi bus object
+nrf = RF24(spi, csn, ce)
+nrf.dynamic_payloads = False
+nrf.payload_length  = 32
+
+# lets create a list of payloads to be streamed to the nRF24L01 running slave()
+buffers = []
+SIZE = 32  # we'll use SIZE for the number of payloads in the list and the payloads' length
+for i in range(SIZE):
+    buff = b''
+    for j in range(SIZE):
+        buff += bytes([(j >= SIZE / 2 + abs(SIZE / 2 - i) or j <
+                        SIZE / 2 - abs(SIZE / 2 - i)) + 48])
+    buffers.append(buff)
+    del buff
+
+def master(count=1):  # count = 5 will transmit the list 5 times
+    """Transmits a massive buffer of payloads"""
+    # set address of RX node into a TX pipe
+    nrf.open_tx_pipe(addressTx)
+    # ensures the nRF24L01 is in TX mode
+    nrf.listen = False
+
+    success_percentage = 0
+    for _ in range(count):
+        now = time.monotonic() * 1000  # start timer
+        result = nrf.send(buffers)
+        print('Transmission took', time.monotonic() * 1000 - now, 'ms')
+        for r in result:
+            success_percentage += 1 if r else 0
+    success_percentage /= SIZE * count
+    print('successfully sent', success_percentage * 100, '%')
+
+
+def receiveData():
+    nrf.open_rx_pipe(0, addressRx)
+    nrf.listen = True
+
+    count = ''
+    start = 0
+    clock = 0;
+    indexer = 0
+    accelerationX = 0
+    accelerationY = 0
+    accelerationZ = 0
+    batteryLevel = 0
+    humidity = 0
+    temperature = 0
+
+    while True:
+        if nrf.any():
+            message = ''
+            timestamp = ''
+            count = ''
+            rx = nrf.recv()
+
+            for i in range(0, len(rx)):
+                if chr(rx[i]) == '$':
+                   start = 1
+                   indexer += 1
+                elif chr(rx[i]) == '!':
+                   clock = 1
+                   indexer = 0
+                   
+                if start:
+                   message += chr(rx[i])
+                   
+                elif clock:
+                   timestamp += chr(rx[i])
+                
+            if start:
+                for i in range(1, len(message)):
+                   if message[i] == 'b':
+                       print(int(count))
+                       count = 0
+                   elif message[i] == 'w':
+                       print(int(count))
+                       count = 0
+                   else: 
+                       count += message[i]
+                     
+            elif clock:
+                print(timestamp)
+
+            
+            start = 0 
+            clock = 0
+            now = time.monotonic()
+            
+        time.sleep(0.01);
+
+
+print("""\t\t\tStructural Health Monitor""")
+receiveData()
