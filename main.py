@@ -20,6 +20,7 @@ def radio_tx(buf):
     nrf.open_rx_pipe(1, pipes[0])
     nrf.stop_listening()
 
+
     # transmit buffer
     try:
         nrf.send(buf)
